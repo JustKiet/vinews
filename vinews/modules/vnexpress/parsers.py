@@ -283,7 +283,6 @@ class VinewsVnExpressArticleParser(IVinewsArticleParser):
         :param str response: The HTML response content of the article.
         :return: An Article object containing the parsed data.
         :rtype: Article
-        :raises InvalidURLError: If the provided URL is not a valid VnExpress article URL.
         :raises MissingElementError: If the article section or required elements are not found.
         :raises UnexpectedElementError: If an unexpected element type is encountered.
         """
