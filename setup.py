@@ -8,7 +8,7 @@ with open('README.md', encoding='utf-8') as f:
 
 setup(
     name='vinews',
-    version='0.1.0-beta.1',
+    version='0.1.0-beta.2',
     install_requires=requirements,
     include_package_data=True,
     packages=find_packages(exclude=['tests', 'tests.*']),
