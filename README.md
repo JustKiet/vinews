@@ -15,6 +15,7 @@ Please be respectful of the websites you interact with. Always use appropriate r
 ## Supported Websites
 
 - **VnExpress**
+- *more coming soon...*
 
 ## Installation
 
