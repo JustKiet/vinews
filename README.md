@@ -19,9 +19,7 @@ Please be respectful of the websites you interact with. Always use appropriate r
 ## Installation
 
 ```bash
-pip install -i https://test.pypi.org/simple \
-            --extra-index-url https://pypi.org/simple \
-            vinews==0.1.0.dev1
+pip install vinews
 ```
 
 ## Quick Start
