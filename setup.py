@@ -8,7 +8,7 @@ with open('README.md', encoding='utf-8') as f:
 
 setup(
     name='vinews',
-    version='0.1.0-beta.3',
+    version='0.1.0-beta.4',
     install_requires=requirements,
     include_package_data=True,
     packages=find_packages(exclude=['tests', 'tests.*']),
@@ -17,7 +17,7 @@ setup(
     description='Vinews is an open-source library which provides modules for searching and scraping news data from Vietnamese news websites.',
     long_description=long_description,
     long_description_content_type='text/markdown',
-    license='MIT',
+    license='Apache-2.0',
     keywords='news, scraping, vietnamese, vietnam, web scraping, news scraping',
     python_requires='>=3.12',
     url='https://github.com/JustKiet/vinews',
@@ -29,7 +29,7 @@ setup(
     classifiers=[
         'Development Status :: 3 - Alpha',
         'Intended Audience :: Developers',
-        'License :: OSI Approved :: MIT License',
+        'License :: OSI Approved :: Apache Software License',
         'Programming Language :: Python :: 3.12',
         'Programming Language :: Python :: 3.13',
         'Programming Language :: Python :: 3.14',
