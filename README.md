@@ -39,23 +39,24 @@ print(results)
 homepage = search_engine.search_homepage()
 print(homepage)    
 
-# Test asynchronous search
-async def async_test():
-    async_results = await search_engine.async_search(query=query, date_range="day", category="kinhdoanh", limit=5, advanced=True)
-    
-    async_homepage = await search_engine.async_search_homepage()
+def vinews_async():
+    # Test asynchronous search
+    async def async_test():
+        async_results = await search_engine.async_search(query=query, date_range="day", category="kinhdoanh", limit=5, advanced=True)
+        
+        async_homepage = await search_engine.async_search_homepage()
 
-    # Optional saving
-    with open("tests/output/vnexpress_search.json", "w", encoding="utf-8") as f:
-        json.dump(async_results.model_dump(), f, indent=2, ensure_ascii=False)
-    
-    with open("tests/output/vnexpress_homepage.json", "w", encoding="utf-8") as f:
-        json.dump(async_homepage.model_dump(), f, indent=2, ensure_ascii=False)
+        # Optional saving
+        with open("tests/output/vnexpress_search.json", "w", encoding="utf-8") as f:
+            json.dump(async_results.model_dump(), f, indent=2, ensure_ascii=False)
+        
+        with open("tests/output/vnexpress_homepage.json", "w", encoding="utf-8") as f:
+            json.dump(async_homepage.model_dump(), f, indent=2, ensure_ascii=False)
     
     asyncio.run(async_test())
 
 if __name__ == "__main__":
-    async_test()
+    vinews_async()
 ```
 
 ## Contributing

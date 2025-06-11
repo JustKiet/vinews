@@ -336,9 +336,14 @@ class VinewsVnExpressSearch:
 
         latest_news_url = [card.url for card in homepage_news_cards.latest_news]
 
-        latest_news_articles = [
-            self._scraper.scrape_article(url) for url in latest_news_url
-        ]
+        latest_news_articles: list[Article] = []
+        
+        for url in latest_news_url:
+            try:
+                latest_news_articles.append(self._scraper.scrape_article(url))
+            except Exception as e:
+                logger.warning(f"Failed to scrape article at url: '{url}'. Error: {e}")
+                continue        
 
         categorized_news_articles: list[CategorizedNewsArticles] = []
 
