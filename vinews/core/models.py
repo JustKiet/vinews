@@ -36,8 +36,8 @@ class Article(BaseModel):
     description: str
     content: str
     media: Optional[list[Media]] = None
-    author: str
-    publish_timestamp: int
+    author: Optional[str] = None
+    publish_timestamp: Optional[int] = None
     tags: list[str] = Field(default_factory=list)
     related_news: Optional[list[NewsCard]] = None
     comments: Optional[list[Comment]] = None
@@ -79,6 +79,25 @@ class Homepage(BaseModel):
     total_articles: int
     timestamp: int
 
+class CategorizedNewsArticles(BaseModel):
+    category: str
+    articles: list[Article]
+    total_articles: int
+
+class TopNewsArticles(BaseModel):
+    featured: Article
+    sub_featured: list[Article]
+    total_articles: int
+
+class HomepageArticles(BaseModel):
+    url: str
+    domain: str
+    top_news: TopNewsArticles
+    latest_news: list[Article]
+    categorized_news: list[CategorizedNewsArticles]
+    total_articles: int
+    timestamp: int
+
 class TopicPage(BaseModel):
     url: str
     domain: str
@@ -99,6 +118,7 @@ class TopicPage(BaseModel):
 class SearchResults(BaseModel):
     url: str
     domain: str
+    params: dict[str, Any]
     results: list[NewsCard]
     total_results: int
     timestamp: int
@@ -110,9 +130,10 @@ class SearchResults(BaseModel):
             raise ValueError(f"Invalid URL: {data['url']} for domain: {data['domain']}")
         return data
     
-class AdvancedSearchResults(BaseModel):
+class SearchResultsArticles(BaseModel):
     url: str
     domain: str
+    params: dict[str, Any]
     results: list[Article]
     total_results: int
     timestamp: int
