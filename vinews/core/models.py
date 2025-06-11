@@ -79,6 +79,25 @@ class Homepage(BaseModel):
     total_articles: int
     timestamp: int
 
+class CategorizedNewsArticles(BaseModel):
+    category: str
+    articles: list[Article]
+    total_articles: int
+
+class TopNewsArticles(BaseModel):
+    featured: Article
+    sub_featured: list[Article]
+    total_articles: int
+
+class HomepageArticles(BaseModel):
+    url: str
+    domain: str
+    top_news: TopNewsArticles
+    latest_news: list[Article]
+    categorized_news: list[CategorizedNewsArticles]
+    total_articles: int
+    timestamp: int
+
 class TopicPage(BaseModel):
     url: str
     domain: str
@@ -111,7 +130,7 @@ class SearchResults(BaseModel):
             raise ValueError(f"Invalid URL: {data['url']} for domain: {data['domain']}")
         return data
     
-class AdvancedSearchResults(BaseModel):
+class SearchResultsArticles(BaseModel):
     url: str
     domain: str
     params: dict[str, Any]

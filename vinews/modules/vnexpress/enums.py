@@ -1,5 +1,4 @@
 from enum import Enum
-
 class VnExpressSearchCategory(Enum):
     BUSINESS = "kinhdoanh"
     COMMUNITY = "cong-dong"

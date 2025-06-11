@@ -102,3 +102,19 @@ class VinewsValidator:
             validated_tags.append(VinewsValidator.validate_tag(element))
         
         return validated_tags
+    
+    @staticmethod
+    def validate_html_url(url: str) -> bool:
+        """
+        Checks if the provided URL is an HTML URL.
+
+        :param url: The URL to check.
+        :return: True if the URL is an HTML URL, False otherwise.
+        """
+        parsed = urlparse(url)
+        path = parsed.path.lower()
+        return (
+            parsed.scheme in ("http", "https")
+            and not path.endswith('/')
+            and path.endswith((".html", ".htm"))
+        )

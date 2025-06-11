@@ -1,12 +1,23 @@
-from vinews.core.models import SearchResults, Homepage, AdvancedSearchResults, Article
-from vinews.modules.vnexpress.parsers import VinewsVnExpressPageParser, VinewsVnExpressArticleParser
-from vinews.modules.vnexpress.enums import VnExpressSearchCategory
-
+from vinews.core.models import (
+    SearchResults, SearchResultsArticles, Article, 
+    HomepageArticles, CategorizedNewsArticles, TopNewsArticles,
+)
+from vinews.modules.vnexpress.scrapers import VinewsVnExpressScraper
+from vinews.modules.vnexpress.parsers import VinewsVnExpressPageParser
+from vinews.core.exceptions import MissingElementError
 from typing import Optional, Literal, Union, Any, overload
 from urllib.parse import urlencode
 from datetime import datetime
-import httpx
 import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
+
+VnExpressSearchCategory = Literal[
+    "kinhdoanh", "cong-dong", "phap-luat", "the-gioi", "dulich",
+    "khoa-hoc-cong-nghe", "thoi-su", "oto-xe-may", "thethao",
+    "doisong", "suckhoe"
+]
 
 class VinewsVnExpressSearch:
     def __init__(self, timeout: int = 10, **kwargs: Any) -> None:
@@ -21,7 +32,7 @@ class VinewsVnExpressSearch:
         self._homepage_url = "https://vnexpress.net/"
         self._domain = "vnexpress.net"
         self._base_search_url = "https://timkiem.vnexpress.net/"
-        self._article_parser = VinewsVnExpressArticleParser()
+        self._scraper = VinewsVnExpressScraper()
         self._page_parser = VinewsVnExpressPageParser()
         self._semaphore = asyncio.Semaphore(self._semaphore_limit)
 
@@ -73,22 +84,22 @@ class VinewsVnExpressSearch:
         date_range: Optional[Literal["day", "week", "month", "year"]] = None,
         category: Optional[VnExpressSearchCategory] = None,
         advanced: Literal[True],
-        **kwargs: Any,
-    ) -> AdvancedSearchResults: 
+        limit: int = 5,
+    ) -> SearchResultsArticles: 
         """
         Searches for news articles on VnExpress based on the provided query, date range, and category.
         
         :param str query: The search query string.
         :param Optional[Literal["day", "week", "month", "year"]] date_range: Optional date range filter for the search results.
         :param Optional[VnExpressSearchCategory] category: Optional category filter for the search results.
-        :param Literal[True] advanced: Must be `True`, returns AdvancedSearchResults instead of SearchResults.
-        :param kwargs: Additional keyword arguments, such as limit for the number of articles to fetch.
-        :return: An AdvancedSearchResults object containing the search results with detailed articles.
-        :rtype: AdvancedSearchResults
+        :param Literal[True] advanced: Must be `True`, returns SearchResultsArticles instead of SearchResults.
+        :param limit: Optional limit for the number of articles to fetch, defaults to 5 if not specified. Only support range from 1 to 5.
+        :return: An SearchResultsArticles object containing the search results with detailed articles.
+        :rtype: SearchResultsArticles
+        :raises ValueError: If the limit is not between 1 and 5.
         :raises httpx.HTTPStatusError: If the HTTP request fails with a non-2xx status code.
         :raises vinews.core.exceptions.MissingElementError: If the search results are missing expected elements.
         :raises vinews.core.exceptions.UnexpectedElementError: If the search results contain unexpected elements.
-        :raises TypeError: If the `advanced` parameter is not True when additional keyword arguments are provided.
         """
         ...
 
@@ -98,38 +109,52 @@ class VinewsVnExpressSearch:
         date_range: Optional[Literal["day", "week", "month", "year"]] = None,
         category: Optional[VnExpressSearchCategory] = None,
         advanced: bool = False,
-        **kwargs: Any,
-    ) -> Union[SearchResults, AdvancedSearchResults]:
+        limit: int = 5,
+    ) -> Union[SearchResults, SearchResultsArticles]:
         """
         Searches for news articles on VnExpress based on the provided query, date range, and category.
 
         :param str query: The search query string.
         :param Optional[Literal["day", "week", "month", "year"]] date_range: Optional date range filter for the search results.
         :param Optional[VnExpressSearchCategory] category: Optional category filter for the search results.
-        :param bool advanced: If True, returns AdvancedSearchResults instead of SearchResults. Note that this will only fetch the first 5 articles to 
-        :return: A SearchResults or AdvancedSearchResults object containing the search results.
-        :rtype: Union[SearchResults, AdvancedSearchResults]
+        :param bool advanced: If True, returns SearchResultsArticles instead of SearchResults. Note that this will only fetch the first 5 articles to avoid performance issues and rate limits.
+        :param limit: Optional limit for the number of articles to fetch, defaults to 5 if not specified. Only support range from 1 to 10.
+        :return: A SearchResults or SearchResultsArticles object containing the search results.
+        :rtype: Union[SearchResults, SearchResultsArticles]
+        :raises ValueError: If the limit is not between 1 and 10.
         :raises httpx.HTTPStatusError: If the HTTP request fails with a non-2xx status code.
         :raises vinews.core.exceptions.MissingElementError: If the search results are missing expected elements.
         :raises vinews.core.exceptions.UnexpectedElementError: If the search results contain unexpected elements.
         """
-        limit = kwargs.get("limit", 5)  # Default limit to 5 articles if not specified
-        params = {"q": query}
+        if limit < 1 or limit > 10:
+            raise ValueError("Limit must be between 1 and 10.")
+        
+        params = {"q": query, "media_type": "text"}
 
         if date_range:
-            params["date_range"] = date_range
+            params["date_format"] = date_range
 
         if category:
-            params["category"] = category.value
+            params["cate_code"] = category
 
         query_string = urlencode(params)
+
         search_url = f"{self._base_search_url}?{query_string}"
 
-        with httpx.Client() as client:
-            response = client.get(search_url)
-            response.raise_for_status()
+        search_results_html = self._scraper.fetch(search_url)
 
-        news_cards = self._page_parser.parse_search_results(response=response.text)
+        try:
+            news_cards = self._page_parser.parse_search_results(response=search_results_html)
+        except MissingElementError:
+            logger.error("Search results are missing expected elements. Perhaps the search query returned no results or the structure of the page has changed.")
+            return SearchResults(
+                url=search_url,
+                domain=self._domain,
+                params=params,
+                results=[],
+                total_results=0,
+                timestamp=int(datetime.now().timestamp())
+            )
 
         articles: list[Article] = []
 
@@ -137,16 +162,16 @@ class VinewsVnExpressSearch:
             urls = [card.url for card in news_cards]
 
             for url in urls[:limit]: # Limit to first 10 articles for performance and avoiding rate limits
-                with httpx.Client(timeout=self._timeout) as client:
-                    response = client.get(url)
-                    response.raise_for_status()
-                
                 try:
-                    articles.append(self._article_parser.parse_article(url, response=response.text))
-                except Exception as e:
-                    continue  # Skip articles that cannot be parsed
+                    article = self._scraper.scrape_article(url)
+                except Exception:
+                    logger.warning(f"Failed to scrape article at url: '{url}'. Skipping this article.")
+                    continue # Skip articles that cannot be scraped
+
+                if article:
+                    articles.append(article)
                 
-            return AdvancedSearchResults(
+            return SearchResultsArticles(
                 url=search_url,
                 domain=self._domain,
                 params=params,
@@ -163,16 +188,6 @@ class VinewsVnExpressSearch:
             total_results=len(news_cards),
             timestamp=int(datetime.now().timestamp())
         )
-    
-    async def _async_fetch_and_parse(self, url: str) -> Optional[Article]:
-        async with self._semaphore:
-            async with httpx.AsyncClient(timeout=self._timeout) as client:
-                response = await client.get(url)
-                response.raise_for_status()
-            try:
-                return self._article_parser.parse_article(url, response=response.text)
-            except Exception as e:
-                pass
     
     @overload
     async def async_search(
@@ -203,19 +218,20 @@ class VinewsVnExpressSearch:
         date_range: Optional[Literal["day", "week", "month", "year"]] = None,
         category: Optional[VnExpressSearchCategory] = None,
         advanced: Literal[True],
-        **kwargs: Any,
-    ) -> AdvancedSearchResults: 
+        limit: int = 5,
+    ) -> SearchResultsArticles: 
         """
         Searches for news articles on VnExpress based on the provided query, date range, and category.
         
         :param str query: The search query string.
         :param Optional[Literal["day", "week", "month", "year"]] date_range: Optional date range filter for the search results.
         :param Optional[VnExpressSearchCategory] category: Optional category filter for the search results.
-        :param Literal[True] advanced: Must be `True`, returns AdvancedSearchResults instead of SearchResults. 
-        Note that this will only fetch the first 5 articles (can be tweaked by setting `limit` in **kwargs, use with caution) for performance and avoiding rate limits.
-        :param kwargs: Additional keyword arguments, such as limit for the number of articles to fetch.
-        :return: An AdvancedSearchResults object containing the search results with detailed articles.
-        :rtype: AdvancedSearchResults
+        :param Literal[True] advanced: Must be `True`, returns SearchResultsArticles instead of SearchResults. 
+        Note that this will only fetch the first 5 articles for performance and avoiding rate limits.
+        :param limit: Optional limit for the number of articles to fetch, defaults to 5 if not specified. Only support range from 1 to 5.
+        :return: An SearchResultsArticles object containing the search results with detailed articles.
+        :rtype: SearchResultsArticles
+        :raises ValueError: If the limit is not between 1 and 5.
         :raises httpx.HTTPStatusError: If the HTTP request fails with a non-2xx status code.
         :raises vinews.core.exceptions.MissingElementError: If the search results are missing expected elements.
         :raises vinews.core.exceptions.UnexpectedElementError: If the search results contain unexpected elements.
@@ -229,51 +245,66 @@ class VinewsVnExpressSearch:
         date_range: Optional[Literal["day", "week", "month", "year"]] = None,
         category: Optional[VnExpressSearchCategory] = None,
         advanced: bool = False,
-        **kwargs: Any,
-    ) -> Union[SearchResults, AdvancedSearchResults]:
+        limit: int = 5,
+    ) -> Union[SearchResults, SearchResultsArticles]:
         """
         Asynchronously searches for news articles on VnExpress based on the provided query, date range, and category.
 
         :param str query: The search query string.
         :param Optional[Literal["day", "week", "month", "year"]] date_range: Optional date range filter for the search results.
         :param Optional[VnExpressSearchCategory] category: Optional category filter for the search results.
-        :param bool advanced: If True, returns AdvancedSearchResults instead of SearchResults.
-        Note that this will only fetch the first 5 articles (can be tweaked by setting `limit` in **kwargs, use with caution) for performance and avoiding rate limits.
-        :return: A SearchResults or AdvancedSearchResults object containing the search results.
-        :rtype: Union[SearchResults, AdvancedSearchResults]
+        :param bool advanced: If True, returns SearchResultsArticles instead of SearchResults.
+        Note that this will only fetch the first 5 articles for performance and avoiding rate limits.
+        :param limit: Optional limit for the number of articles to fetch, defaults to 5 if not specified. Only support range from 1 to 10.
+        :return: A SearchResults or SearchResultsArticles object containing the search results.
+        :rtype: Union[SearchResults, SearchResultsArticles]
+        :raises ValueError: If the limit is not between 1 and 10.
         :raises httpx.HTTPStatusError: If the HTTP request fails with a non-2xx status code.
         :raises vinews.core.exceptions.MissingElementError: If the search results are missing expected elements.
         :raises vinews.core.exceptions.UnexpectedElementError: If the search results contain unexpected elements.
         """
-        limit = kwargs.get("limit", 5)  # Default limit to 5 articles if not specified
+        if limit < 1 or limit > 10:
+            raise ValueError("Limit must be between 1 and 10.")
+        
         params = {"q": query}
 
         if date_range:
-            params["date_range"] = date_range
+            params["date_format"] = date_range
 
         if category:
-            params["category"] = category.value
+            params["cate_code"] = category
 
         query_string = urlencode(params)
+
         search_url = f"{self._base_search_url}?{query_string}"
 
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
-            response = await client.get(search_url)
-            response.raise_for_status()
+        search_results_html = await self._scraper.async_fetch(search_url)
 
-        news_cards = self._page_parser.parse_search_results(response=response.text)
+        try:
+            news_cards = self._page_parser.parse_search_results(response=search_results_html)
+        except MissingElementError:
+            logger.error("Search results are missing expected elements. Perhaps the search query returned no results or the structure of the page has changed.")
+            return SearchResults(
+                url=search_url,
+                domain=self._domain,
+                params=params,
+                results=[],
+                total_results=0,
+                timestamp=int(datetime.now().timestamp())
+            )
 
-        articles: list[Optional[Article]] = []
+        articles: list[Union[Article, BaseException]] = []
 
         if advanced:
             urls = [card.url for card in news_cards]
 
-            tasks = [self._async_fetch_and_parse(url) for url in urls[:limit]]
-            articles = await asyncio.gather(*tasks)
+            tasks = [self._scraper.async_scrape_article(url) for url in urls[:limit]]
 
-            articles_filtered = [article for article in articles if article is not None]  # Filter out None values
+            articles = await asyncio.gather(*tasks, return_exceptions=True)
 
-            return AdvancedSearchResults(
+            articles_filtered = [article for article in articles if isinstance(article, Article)]
+
+            return SearchResultsArticles(
                 url=search_url,
                 domain=self._domain,
                 params=params,
@@ -291,34 +322,164 @@ class VinewsVnExpressSearch:
             timestamp=int(datetime.now().timestamp())
         )
     
-    def fetch_homepage(self) -> Homepage:
+    def search_homepage(self) -> HomepageArticles:
         """
-        Fetches the homepage of VnExpress and returns a structured Homepage object.
+        Searches the homepage of VnExpress and returns a structured HomepageArticles object.
 
-        :return: A Homepage object containing the parsed data.
-        :rtype: Homepage
+        :return: A HomepageArticles object containing the parsed data with scraped articles.
+        :rtype: HomepageArticles
         :raises httpx.HTTPStatusError: If the HTTP request fails with a non-2xx status code.
         :raises vinews.core.exceptions.MissingElementError: If the homepage is missing expected elements.
         :raises vinews.core.exceptions.UnexpectedElementError: If the homepage contains unexpected elements.
         """
-        with httpx.Client() as client:
-            response = client.get(self._homepage_url)
-            response.raise_for_status()
+        homepage_news_cards = self._scraper.scrape_homepage()
 
-        return self._page_parser.parse_homepage(response=response.text)
+        latest_news_url = [card.url for card in homepage_news_cards.latest_news]
+
+        latest_news_articles = [
+            self._scraper.scrape_article(url) for url in latest_news_url
+        ]
+
+        categorized_news_articles: list[CategorizedNewsArticles] = []
+
+        for categorized_news in homepage_news_cards.categorized_news:
+            if not categorized_news.news_cards:
+                logger.warning(f"Skipping categorized news '{categorized_news.category}' as it has no articles.")
+                continue
+
+            cat_articles: list[Article] = []
+
+            for article in categorized_news.news_cards:
+                try:
+                    cat_articles.append(self._scraper.scrape_article(article.url))
+                except Exception as e:
+                    logger.warning(f"Failed to scrape article at url: '{article.url}'. Error: {e}")
+                    continue # Skip articles that cannot be scraped
+
+            categorized_news_articles.append(
+                CategorizedNewsArticles(
+                    category=categorized_news.category,
+                    articles=cat_articles,
+                    total_articles=len(categorized_news.news_cards)
+                )
+            )
+
+        all_top_articles: list[Article] = []
+
+        try:
+            all_top_articles.append(
+                self._scraper.scrape_article(homepage_news_cards.top_news.featured.url)
+            )
+        except Exception as e:
+            logger.warning(f"Failed to scrape featured top news article at url: '{homepage_news_cards.top_news.featured.url}'. Error: {e}")
+            pass
+        
+        for article in homepage_news_cards.top_news.sub_featured:
+            try:
+                all_top_articles.append(
+                    self._scraper.scrape_article(article.url)
+                )
+            except Exception as e:
+                logger.warning(f"Failed to scrape sub-featured top news article at url: '{article.url}'. Error: {e}")
+                continue # Skip articles that cannot be scraped
+
+        top_news_articles = TopNewsArticles(
+            featured=all_top_articles[0],
+            sub_featured=all_top_articles[1:],
+            total_articles=len(all_top_articles)
+        )
+
+        return HomepageArticles(
+            url=self._homepage_url,
+            domain=self._domain,
+            top_news=top_news_articles,
+            latest_news=latest_news_articles,
+            categorized_news=categorized_news_articles,
+            total_articles=len(latest_news_articles) + len(categorized_news_articles),
+            timestamp=int(datetime.now().timestamp())
+        )
     
-    async def async_fetch_homepage(self) -> Homepage:
+    async def async_search_homepage(self) -> HomepageArticles:
         """
-        Asynchronously fetches the homepage of VnExpress and returns a structured Homepage object.
+        Asynchronously searches the homepage of VnExpress and returns a structured HomepageArticles object.
 
-        :return: A Homepage object containing the parsed data.
-        :rtype: Homepage
+        :return: A HomepageArticles object containing the parsed data and scraped articles.
+        :rtype: HomepageArticles
         :raises httpx.HTTPStatusError: If the HTTP request fails with a non-2xx status code.
         :raises vinews.core.exceptions.MissingElementError: If the homepage is missing expected elements.
         :raises vinews.core.exceptions.UnexpectedElementError: If the homepage contains unexpected elements.
         """
-        async with httpx.AsyncClient() as client:
-            response = await client.get(self._homepage_url)
-            response.raise_for_status()
+        homepage_news_cards = await self._scraper.async_scrape_homepage()
 
-        return self._page_parser.parse_homepage(response=response.text)
+        latest_news_url = [card.url for card in homepage_news_cards.latest_news]
+
+        tasks = [self._scraper.async_scrape_article(url) for url in latest_news_url]
+
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+    
+        latest_news_articles = [result for result in results if isinstance(result, Article)]
+
+        categorized_news_articles: list[CategorizedNewsArticles] = []
+
+        for categorized_news in homepage_news_cards.categorized_news:
+            if not categorized_news.news_cards:
+                logger.warning(f"Skipping categorized news '{categorized_news.category}' as it has no articles.")
+                continue
+
+            cat_articles: list[Article] = []
+
+            tasks = [
+                self._scraper.async_scrape_article(article.url) 
+                for article in categorized_news.news_cards
+            ]
+
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            cat_articles.extend(
+                [result for result in results if isinstance(result, Article)]
+            )
+
+            categorized_news_articles.append(
+                CategorizedNewsArticles(
+                    category=categorized_news.category,
+                    articles=cat_articles,
+                    total_articles=len(cat_articles)
+                )
+            )
+
+        all_articles: list[Article] = []
+
+        try:
+            all_articles.append(
+                await self._scraper.async_scrape_article(homepage_news_cards.top_news.featured.url)
+            )
+        except Exception as e:
+            logger.warning(f"Failed to scrape featured top news article at url: '{homepage_news_cards.top_news.featured.url}'. Error: {e}")
+            pass
+
+        tasks = [
+            self._scraper.async_scrape_article(article.url) 
+            for article in homepage_news_cards.top_news.sub_featured
+        ]
+
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        all_articles.extend(
+            [result for result in results if isinstance(result, Article)]
+        )
+
+        top_news_articles = TopNewsArticles(
+            featured=all_articles[0],
+            sub_featured=all_articles[1:],
+            total_articles=len(all_articles)
+        )
+
+        return HomepageArticles(
+            url=self._homepage_url,
+            domain=self._domain,
+            top_news=top_news_articles,
+            latest_news=latest_news_articles,
+            categorized_news=categorized_news_articles,
+            total_articles=len(latest_news_articles) + len(categorized_news_articles),
+            timestamp=int(datetime.now().timestamp())
+        )
