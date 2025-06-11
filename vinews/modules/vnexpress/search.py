@@ -343,7 +343,7 @@ class VinewsVnExpressSearch:
                 latest_news_articles.append(self._scraper.scrape_article(url))
             except Exception as e:
                 logger.warning(f"Failed to scrape article at url: '{url}'. Error: {e}")
-                continue        
+                continue
 
         categorized_news_articles: list[CategorizedNewsArticles] = []
 
