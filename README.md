@@ -20,7 +20,7 @@ Please be respectful of the websites you interact with. Always use appropriate r
 ## Installation
 
 ```bash
-pip install vinews
+pip install vinews==0.1.0b2
 ```
 
 ## Quick Start
