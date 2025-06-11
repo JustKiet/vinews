@@ -20,7 +20,7 @@ class IVinewsSearch(Protocol):
         :param str query: The search query string.
         :param Optional[Literal["day", "week", "month", "year"]] date_range: Optional date range filter for the search results.
         :param Optional[VnExpressSearchCategory] category: Optional category filter for the search results.
-        :param bool advanced: If True, returns SearchResultsArticles instead of SearchResults. Note that this will only fetch the first 5 articles to avoid performance issues and rate limits.
+        :param bool advanced: If True, returns SearchResultsArticles instead of SearchResults.
         :param limit: Optional limit for the number of articles to fetch, defaults to 5 if not specified. Only support range from 1 to 10.
         :return: A SearchResults or SearchResultsArticles object containing the search results.
         :rtype: Union[SearchResults, SearchResultsArticles]
