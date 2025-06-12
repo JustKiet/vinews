@@ -20,7 +20,7 @@ Please be respectful of the websites you interact with. Always use appropriate r
 ## Installation
 
 ```bash
-pip install vinews==0.1.0b2
+pip install vinews==0.1.0b4
 ```
 
 ## Quick Start
@@ -72,4 +72,4 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
-This project is licensed under the MIT - see the `LICENSE` file for details.
+This project is licensed under the Apache 2.0 - see the `LICENSE` file for details.

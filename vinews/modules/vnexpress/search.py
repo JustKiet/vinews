@@ -5,6 +5,7 @@ from vinews.core.models import (
 from vinews.modules.vnexpress.scrapers import VinewsVnExpressScraper
 from vinews.modules.vnexpress.parsers import VinewsVnExpressPageParser
 from vinews.core.exceptions import MissingElementError
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, Literal, Union, Any, overload
 from urllib.parse import urlencode
 from datetime import datetime
@@ -54,6 +55,20 @@ class VinewsVnExpressSearch:
         if value <= 0:
             raise ValueError("Timeout must be a positive integer.")
         self._timeout = value
+
+    def _safe_scrape_article(self, url: str) -> Optional[Article]:
+        """
+        Safely scrapes an article from the provided URL.
+
+        :param url: The URL of the article to scrape.
+        :return: An Article object if successful, None if an error occurs.
+        :rtype: Optional[Article]
+        """
+        try:
+            return self._scraper.scrape_article(url)
+        except Exception as e:
+            logger.warning(f"Failed to scrape article at url: '{url}'. Error: {e}")
+            return None
 
     @overload
     def search(
@@ -161,15 +176,10 @@ class VinewsVnExpressSearch:
         if advanced:
             urls = [card.url for card in news_cards]
 
-            for url in urls[:limit]: # Limit to first 10 articles for performance and avoiding rate limits
-                try:
-                    article = self._scraper.scrape_article(url)
-                except Exception:
-                    logger.warning(f"Failed to scrape article at url: '{url}'. Skipping this article.")
-                    continue # Skip articles that cannot be scraped
+            with ThreadPoolExecutor(max_workers=self._semaphore_limit) as executor:
+                results = list(executor.map(self._safe_scrape_article, urls[:limit]))
 
-                if article:
-                    articles.append(article)
+            articles = [result for result in results if isinstance(result, Article)]
                 
             return SearchResultsArticles(
                 url=search_url,
@@ -352,14 +362,14 @@ class VinewsVnExpressSearch:
                 logger.warning(f"Skipping categorized news '{categorized_news.category}' as it has no articles.")
                 continue
 
-            cat_articles: list[Article] = []
+            urls = [article.url for article in categorized_news.news_cards]
 
-            for article in categorized_news.news_cards:
-                try:
-                    cat_articles.append(self._scraper.scrape_article(article.url))
-                except Exception as e:
-                    logger.warning(f"Failed to scrape article at url: '{article.url}'. Error: {e}")
-                    continue # Skip articles that cannot be scraped
+            # Use ThreadPoolExecutor to scrape articles concurrently
+            with ThreadPoolExecutor(max_workers=self._semaphore_limit) as executor:
+                results = list(executor.map(self._safe_scrape_article, urls))
+
+            # Filter out None results (failed scrapes)
+            cat_articles = [result for result in results if isinstance(result, Article)]
 
             categorized_news_articles.append(
                 CategorizedNewsArticles(
@@ -378,21 +388,41 @@ class VinewsVnExpressSearch:
         except Exception as e:
             logger.warning(f"Failed to scrape featured top news article at url: '{homepage_news_cards.top_news.featured.url}'. Error: {e}")
             pass
-        
-        for article in homepage_news_cards.top_news.sub_featured:
-            try:
-                all_top_articles.append(
-                    self._scraper.scrape_article(article.url)
-                )
-            except Exception as e:
-                logger.warning(f"Failed to scrape sub-featured top news article at url: '{article.url}'. Error: {e}")
-                continue # Skip articles that cannot be scraped
 
-        top_news_articles = TopNewsArticles(
-            featured=all_top_articles[0],
-            sub_featured=all_top_articles[1:],
-            total_articles=len(all_top_articles)
+        sub_featured_urls = [article.url for article in homepage_news_cards.top_news.sub_featured]
+
+        # Use ThreadPoolExecutor to scrape sub-featured top news articles concurrently
+        with ThreadPoolExecutor(max_workers=self._semaphore_limit) as executor:
+            results = list(executor.map(self._safe_scrape_article, sub_featured_urls))
+
+        # Filter out None results (failed scrapes)
+        all_top_articles.extend(
+            [result for result in results if isinstance(result, Article)]
         )
+
+        # If the featured article failed to scrape, we should not include it in the top news articles
+        if not all_top_articles:
+            logger.warning("No top news articles could be scraped. Skipping top news section.")
+            all_top_articles = []
+
+            top_news_articles = TopNewsArticles(
+                featured=None,
+                sub_featured=[],
+                total_articles=0
+            )
+        elif len(all_top_articles) < 2:
+            logger.warning("Not enough top news articles scraped. At least 2 articles are required for top news section.")
+            top_news_articles = TopNewsArticles(
+                featured=all_top_articles[0],
+                sub_featured=[],
+                total_articles=len(all_top_articles)
+            )
+        else:
+            top_news_articles = TopNewsArticles(
+                featured=all_top_articles[0],
+                sub_featured=all_top_articles[1:],
+                total_articles=len(all_top_articles)
+            )
 
         return HomepageArticles(
             url=self._homepage_url,
@@ -473,11 +503,28 @@ class VinewsVnExpressSearch:
             [result for result in results if isinstance(result, Article)]
         )
 
-        top_news_articles = TopNewsArticles(
-            featured=all_articles[0],
-            sub_featured=all_articles[1:],
-            total_articles=len(all_articles)
-        )
+        if not all_articles:
+            logger.warning("No top news articles could be scraped. Skipping top news section.")
+            all_articles = []
+
+            top_news_articles = TopNewsArticles(
+                featured=None,
+                sub_featured=[],
+                total_articles=0
+            )
+        elif len(all_articles) < 2:
+            logger.warning("Not enough top news articles scraped. At least 2 articles are required for top news section.")
+            top_news_articles = TopNewsArticles(
+                featured=all_articles[0],
+                sub_featured=[],
+                total_articles=len(all_articles)
+            )
+        else:
+            top_news_articles = TopNewsArticles(
+                featured=all_articles[0],
+                sub_featured=all_articles[1:],
+                total_articles=len(all_articles)
+            )
 
         return HomepageArticles(
             url=self._homepage_url,
