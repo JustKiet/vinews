@@ -85,7 +85,7 @@ class CategorizedNewsArticles(BaseModel):
     total_articles: int
 
 class TopNewsArticles(BaseModel):
-    featured: Article
+    featured: Optional[Article] = None
     sub_featured: list[Article]
     total_articles: int
 
